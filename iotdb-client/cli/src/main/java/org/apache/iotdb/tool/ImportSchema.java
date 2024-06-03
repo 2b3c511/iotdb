@@ -122,12 +122,12 @@ public class ImportSchema extends AbstractSchemaTool {
             .build();
     options.addOption(opFailedFile);
 
-//    Option opAligned =
-//        Option.builder(ALIGNED_ARGS)
-//            .longOpt(ALIGNED_ARGS)
-//            .desc("Whether import schema as aligned timeseries(optional)")
-//            .build();
-//    options.addOption(opAligned);
+    //    Option opAligned =
+    //        Option.builder(ALIGNED_ARGS)
+    //            .longOpt(ALIGNED_ARGS)
+    //            .desc("Whether import schema as aligned timeseries(optional)")
+    //            .build();
+    //    options.addOption(opAligned);
 
     Option opBatchPointSize =
         Option.builder(BATCH_POINT_SIZE_ARGS)
