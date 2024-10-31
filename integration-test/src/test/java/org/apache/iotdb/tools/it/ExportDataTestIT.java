@@ -200,6 +200,8 @@ public class ExportDataTestIT extends AbstractScript {
             "-pw",
             "root",
             "-t",
+            "-ft",
+            "csv",
             "target",
             "-ft",
             "csv",
