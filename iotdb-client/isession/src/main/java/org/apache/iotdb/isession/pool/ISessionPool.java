@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.iotdb.isession.pool;
 
 import org.apache.iotdb.common.rpc.thrift.TAggregationType;
@@ -26,10 +27,11 @@ import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.service.rpc.thrift.TSBackupConfigurationResp;
 import org.apache.iotdb.service.rpc.thrift.TSConnectionInfoResp;
-import org.apache.iotdb.tsfile.file.metadata.enums.CompressionType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSEncoding;
-import org.apache.iotdb.tsfile.write.record.Tablet;
+
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.file.metadata.enums.CompressionType;
+import org.apache.tsfile.file.metadata.enums.TSEncoding;
+import org.apache.tsfile.write.record.Tablet;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -94,7 +96,9 @@ public interface ISessionPool {
       List<List<Object>> valuesList)
       throws IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   void insertOneDeviceRecords(
       String deviceId,
@@ -120,7 +124,9 @@ public interface ISessionPool {
       boolean haveSorted)
       throws IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   void insertOneDeviceRecords(
       String deviceId,
@@ -269,17 +275,23 @@ public interface ISessionPool {
   void deleteData(List<String> paths, long startTime, long endTime)
       throws IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   void setStorageGroup(String storageGroupId)
       throws IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   void deleteStorageGroup(String storageGroup)
       throws IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   void deleteStorageGroups(List<String> storageGroup)
       throws IoTDBConnectionException, StatementExecutionException;
@@ -317,7 +329,9 @@ public interface ISessionPool {
       List<String> measurementAliasList)
       throws IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   @SuppressWarnings("squid:S107") // ignore Methods should not have too many parameters
   void createAlignedTimeseries(
@@ -358,7 +372,9 @@ public interface ISessionPool {
       boolean isAligned)
       throws IOException, IoTDBConnectionException, StatementExecutionException;
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   void createSchemaTemplate(
       String name,
@@ -466,6 +482,10 @@ public interface ISessionPool {
   SessionDataSetWrapper executeLastDataQuery(List<String> paths)
       throws StatementExecutionException, IoTDBConnectionException;
 
+  SessionDataSetWrapper executeLastDataQueryForOneDevice(
+      String db, String device, List<String> sensors, boolean isLegalPathNodes)
+      throws StatementExecutionException, IoTDBConnectionException;
+
   SessionDataSetWrapper executeAggregationQuery(
       List<String> paths, List<TAggregationType> aggregations)
       throws StatementExecutionException, IoTDBConnectionException;
@@ -538,17 +558,23 @@ public interface ISessionPool {
 
   long getQueryTimeout();
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   default void createTimeseriesOfTemplateOnPath(String path)
       throws IoTDBConnectionException, StatementExecutionException {}
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   default void deactivateTempalte(String templateName, String prefixPath)
       throws IoTDBConnectionException, StatementExecutionException {}
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   default SessionDataSetWrapper executeRawDataQuery(
       List<String> paths, long startTime, long endTime)
@@ -556,20 +582,26 @@ public interface ISessionPool {
     return null;
   }
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   default boolean operationSyncTransmit(ByteBuffer buffer)
       throws IoTDBConnectionException, StatementExecutionException {
     return false;
   }
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   default SystemStatus getSystemStatus() throws IoTDBConnectionException {
     return SystemStatus.NORMAL;
   }
 
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   @Deprecated
   default boolean isEnableCacheLeader() {
     return false;

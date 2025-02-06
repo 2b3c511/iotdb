@@ -39,7 +39,7 @@ import java.util.Map;
 
 public class HttpExample {
 
-  private static Logger logger = LoggerFactory.getLogger(HttpExample.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(HttpExample.class);
 
   private static final String UTF8 = "utf-8";
 
@@ -64,10 +64,9 @@ public class HttpExample {
       HttpEntity responseEntity = response.getEntity();
       String message = EntityUtils.toString(responseEntity, UTF8);
       String result = JsonParser.parseString(message).getAsJsonObject().toString();
-      logger.info(result);
+      LOGGER.info(result);
     } catch (IOException e) {
-      e.printStackTrace();
-
+      LOGGER.error("The ping rest api failed", e);
     } finally {
       try {
         httpClient.close();
@@ -75,7 +74,7 @@ public class HttpExample {
           response.close();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOGGER.error("Http Client close error", e);
       }
     }
   }
@@ -101,17 +100,16 @@ public class HttpExample {
       HttpEntity responseEntity = response.getEntity();
       String message = EntityUtils.toString(responseEntity, UTF8);
       String result = JsonParser.parseString(message).getAsJsonObject().toString();
-      logger.info(result);
+      LOGGER.info(result);
     } catch (IOException e) {
-      e.printStackTrace();
-
+      LOGGER.error("The insertTablet rest api failed", e);
     } finally {
       try {
         if (response != null) {
           response.close();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOGGER.error("Response close error", e);
       }
     }
   }
@@ -127,16 +125,16 @@ public class HttpExample {
       HttpEntity responseEntity = response.getEntity();
       String message = EntityUtils.toString(responseEntity, UTF8);
       ObjectMapper mapper = new ObjectMapper();
-      logger.info("message  = {}", mapper.readValue(message, Map.class));
+      LOGGER.info("message  = {}", mapper.readValue(message, Map.class));
     } catch (IOException e) {
-      e.printStackTrace();
+      LOGGER.error("The query rest api failed", e);
     } finally {
       try {
         if (response != null) {
           response.close();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOGGER.error("Response close error", e);
       }
     }
   }

@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.iotdb.jdbc;
 
 import org.slf4j.Logger;
@@ -54,7 +55,7 @@ public class StringUtils {
     try {
       toPlainStringMethod = BigDecimal.class.getMethod("toPlainString");
     } catch (NoSuchMethodException nsme) {
-      LOGGER.info(String.format("to plain String method Error: %s", nsme));
+      LOGGER.warn("To plain String method Error:", nsme);
     }
   }
 
@@ -65,10 +66,8 @@ public class StringUtils {
     if (toPlainStringMethod != null) {
       try {
         return (String) toPlainStringMethod.invoke(decimal, null);
-      } catch (InvocationTargetException invokeEx) {
-        LOGGER.info(String.format("consistent to String Error: %s", invokeEx));
-      } catch (IllegalAccessException accessEx) {
-        LOGGER.info(String.format("consistent to String Error: %s", accessEx));
+      } catch (InvocationTargetException | IllegalAccessException e) {
+        LOGGER.warn("consistent to String Error:", e);
       }
     }
     return decimal.toString();

@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.iotdb.jdbc;
 
 import org.apache.iotdb.rpc.RpcUtils;
@@ -23,13 +24,15 @@ import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.service.rpc.thrift.IClientRPCService;
 import org.apache.iotdb.service.rpc.thrift.TSFetchMetadataReq;
 import org.apache.iotdb.service.rpc.thrift.TSFetchMetadataResp;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.read.common.block.TsBlock;
-import org.apache.iotdb.tsfile.read.common.block.TsBlockBuilder;
-import org.apache.iotdb.tsfile.read.common.block.column.TsBlockSerde;
-import org.apache.iotdb.tsfile.utils.Binary;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.thrift.TException;
+import org.apache.tsfile.common.conf.TSFileConfig;
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.read.common.block.TsBlock;
+import org.apache.tsfile.read.common.block.TsBlockBuilder;
+import org.apache.tsfile.read.common.block.column.TsBlockSerde;
+import org.apache.tsfile.utils.Binary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +45,7 @@ import java.sql.RowIdLifetime;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -53,9 +57,11 @@ import java.util.TreeMap;
 
 public class IoTDBDatabaseMetadata implements DatabaseMetaData {
 
+  private static final org.slf4j.Logger logger =
+      org.slf4j.LoggerFactory.getLogger(IoTDBDatabaseMetadata.class);
   private IoTDBConnection connection;
   private IClientRPCService.Iface client;
-  private static final Logger logger = LoggerFactory.getLogger(IoTDBDatabaseMetadata.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(IoTDBDatabaseMetadata.class);
   private static final String METHOD_NOT_SUPPORTED_STRING = "Method not supported";
   // when running the program in IDE, we can not get the version info using
   // getImplementationVersion()
@@ -64,6 +70,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
           ? IoTDBDatabaseMetadata.class.getPackage().getImplementationVersion()
           : "UNKNOWN";
   private long sessionId;
+  private ZoneId zoneId;
   private static String sqlKeywordsThatArentSQL92;
   private static TsBlockSerde serde = new TsBlockSerde();
 
@@ -137,13 +144,14 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
   private static final String ORDINAL_POSITION = "ORDINAL_POSITION";
   private static final String NULLABLE = "NULLABLE";
 
-  private static final String CONVERT_ERROR_MSG = "convert tsBlock error:%s ";
+  private static final String CONVERT_ERROR_MSG = "convert tsBlock error: {}";
 
   IoTDBDatabaseMetadata(
-      IoTDBConnection connection, IClientRPCService.Iface client, long sessionId) {
+      IoTDBConnection connection, IClientRPCService.Iface client, long sessionId, ZoneId zoneId) {
     this.connection = connection;
     this.client = client;
     this.sessionId = sessionId;
+    this.zoneId = zoneId;
   }
 
   static {
@@ -218,8 +226,9 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
       "LZMA2",
       "LATEST",
       "LIKE",
+      "MAX_BY",
+      "MIN_BY",
       "METADATA",
-      "MERGE",
       "MOVE",
       "MIN_TIME",
       "MAX_TIME",
@@ -257,6 +266,9 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
       "SET",
       "SLIMIT",
       "SOFFSET",
+      "STDDEV",
+      "STDDEV_POP",
+      "STDDEV_SAMP",
       "STORAGE",
       "SUM",
       "SNAPPY",
@@ -284,6 +296,9 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
       "UNSET",
       "UNCOMPRESSED",
       "VALUES",
+      "VARIANCE",
+      "VAR_POP",
+      "VAR_SAMP",
       "VERSION",
       "WHERE",
       "WITH",
@@ -646,7 +661,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get attributes error :%s ", e.getMessage()));
+      LOGGER.error("get attributes error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -663,7 +678,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -690,7 +706,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get best row identifier error :%s ", e.getMessage()));
+      LOGGER.error("get best row identifier error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -708,7 +724,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -721,10 +738,19 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     return "database";
   }
 
+  @SuppressWarnings(
+      "squid:S2095") // ignore Use try-with-resources or close this "Statement" in a "finally"
+  // clause
   @Override
   public ResultSet getCatalogs() throws SQLException {
     Statement stmt = this.connection.createStatement();
-    ResultSet rs = stmt.executeQuery(SHOW_DATABASES_SQL);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(SHOW_DATABASES_SQL);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
 
     List<String> columnNameList = new ArrayList<>();
     List<String> columnTypeList = new ArrayList<>();
@@ -746,7 +772,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format("get cateLogs error :%s ", e.getMessage()));
+      LOGGER.error("get cateLogs error: {}", e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -763,7 +789,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   public static ByteBuffer convertTsBlock(
@@ -775,17 +802,22 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         TSDataType columnType = tsDataTypeList.get(j);
         switch (columnType) {
           case TEXT:
+          case STRING:
+          case BLOB:
             tsBlockBuilder
                 .getColumnBuilder(j)
-                .writeBinary(new Binary(valuesInRow.get(j).toString()));
+                .writeBinary(
+                    new Binary(valuesInRow.get(j).toString(), TSFileConfig.STRING_CHARSET));
             break;
           case FLOAT:
             tsBlockBuilder.getColumnBuilder(j).writeFloat((float) valuesInRow.get(j));
             break;
           case INT32:
+          case DATE:
             tsBlockBuilder.getColumnBuilder(j).writeInt((int) valuesInRow.get(j));
             break;
           case INT64:
+          case TIMESTAMP:
             tsBlockBuilder.getColumnBuilder(j).writeLong((long) valuesInRow.get(j));
             break;
           case DOUBLE:
@@ -795,7 +827,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
             tsBlockBuilder.getColumnBuilder(j).writeBoolean((boolean) valuesInRow.get(j));
             break;
           default:
-            logger.error("No data type was matched {}", columnType);
+            LOGGER.error("No data type was matched {}", columnType);
             break;
         }
       }
@@ -809,11 +841,19 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     }
   }
 
+  @SuppressWarnings(
+      "squid:S2095") // ignore Use try-with-resources or close this "Statement" in a "finally"
+  // clause
   @Override
   public ResultSet getClientInfoProperties() throws SQLException {
     Statement stmt = this.connection.createStatement();
-    ResultSet rs = stmt.executeQuery(SHOW_DATABASES_SQL);
-
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(SHOW_DATABASES_SQL);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[4];
     fields[0] = new Field("", "NAME", "TEXT");
     fields[1] = new Field("", "MAX_LEN", INT32);
@@ -839,9 +879,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(
-          String.format(
-              "consert tsBlock error when get client info properties :%s ", e.getMessage()));
+      LOGGER.error("convert tsBlock error when get client info properties: {}", e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -858,14 +896,17 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @SuppressWarnings({
     "squid:S6541",
-    "squid:S3776"
+    "squid:S3776",
+    "squid:S2095"
   }) // ignore Cognitive Complexity of methods should not be too high
   // ignore Methods should not perform too many tasks (aka Brain method)
+  // ignore Use try-with-resources or close this "Statement" in a "finally"
   @Override
   public ResultSet getColumnPrivileges(
       String catalog, String schemaPattern, String tableNamePattern, String columnNamePattern)
@@ -902,7 +943,13 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         && columnNamePattern.length() > 0) {
       sql = sql + "." + columnNamePattern;
     }
-    ResultSet rs = stmt.executeQuery(sql);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(sql);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[8];
     fields[0] = new Field("", TABLE_CAT, "TEXT");
     fields[1] = new Field("", TABLE_SCHEM, "TEXT");
@@ -955,8 +1002,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(
-          String.format("consert tsBlock error when get column privileges :%s ", e.getMessage()));
+      LOGGER.error("convert tsBlock error when get column privileges: {}", e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -973,7 +1019,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1011,7 +1058,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get cross reference error :%s ", e.getMessage()));
+      LOGGER.error("get cross reference error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1028,7 +1075,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1041,7 +1089,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         majorVersion = Integer.valueOf(versions[0]);
       }
     } catch (TException e) {
-      logger.error(String.format("get database major version error :%s ", e.getMessage()));
+      LOGGER.error("get database major version error: {}", e.getMessage());
     }
     return majorVersion;
   }
@@ -1056,7 +1104,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         minorVersion = Integer.valueOf(versions[1]);
       }
     } catch (TException e) {
-      logger.error(String.format("get database minor version error :%s ", e.getMessage()));
+      LOGGER.error("get database minor version error: {}", e.getMessage());
     }
     return minorVersion;
   }
@@ -1125,7 +1173,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get exported keys error :%s ", e.getMessage()));
+      LOGGER.error("get exported keys error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1142,7 +1190,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1150,6 +1199,9 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     return "";
   }
 
+  @SuppressWarnings(
+      "squid:S2095") // ignore Use try-with-resources or close this "Statement" in a "finally"
+  // clause
   @Override
   public ResultSet getFunctionColumns(
       String catalog,
@@ -1158,7 +1210,13 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
       java.lang.String columnNamePattern)
       throws SQLException {
     Statement stmt = connection.createStatement();
-    ResultSet rs = stmt.executeQuery(SHOW_FUNCTIONS);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(SHOW_FUNCTIONS);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[17];
     fields[0] = new Field("", "FUNCTION_CAT ", "TEXT");
     fields[1] = new Field("", "FUNCTION_SCHEM", "TEXT");
@@ -1225,8 +1283,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(
-          String.format("convert tsBlock error when get function columns:%s ", e.getMessage()));
+      LOGGER.error("convert tsBlock error when get function columns: {}", e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -1243,14 +1300,24 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
+  @SuppressWarnings(
+      "squid:S2095") // ignore Use try-with-resources or close this "Statement" in a "finally"
+  // clause
   @Override
   public ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern)
       throws SQLException {
     Statement stmt = connection.createStatement();
-    ResultSet rs = stmt.executeQuery(SHOW_FUNCTIONS);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(SHOW_FUNCTIONS);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[6];
     fields[0] = new Field("", "FUNCTION_CAT ", "TEXT");
     fields[1] = new Field("", "FUNCTION_SCHEM", "TEXT");
@@ -1295,7 +1362,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format("convert tsBlock error when get functions:%s ", e.getMessage()));
+      LOGGER.error("convert tsBlock error when get functions: {}", e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -1312,7 +1379,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1348,7 +1416,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get import keys error:%s ", e.getMessage()));
+      LOGGER.error("get import keys error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1365,7 +1433,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1397,7 +1466,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get index info error:%s ", e.getMessage()));
+      LOGGER.error("get index info error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1414,7 +1483,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1431,6 +1501,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
   public int getMaxBinaryLiteralLength() {
     return Integer.MAX_VALUE;
   }
+
   /** Although there is no limit, it is not recommended */
   @Override
   public int getMaxCatalogNameLength() {
@@ -1441,6 +1512,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
   public int getMaxCharLiteralLength() {
     return Integer.MAX_VALUE;
   }
+
   /** Although there is no limit, it is not recommended */
   @Override
   public int getMaxColumnNameLength() {
@@ -1478,7 +1550,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       maxcount = client.getProperties().getMaxConcurrentClientNum();
     } catch (TException e) {
-      logger.error(String.format("get max concurrentClientNUm error:%s ", e.getMessage()));
+      LOGGER.error("get max concurrentClientNUm error: {}", e.getMessage());
     }
     return maxcount;
   }
@@ -1497,11 +1569,13 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
   public int getMaxProcedureNameLength() {
     return 0;
   }
+
   /** maxrowsize unlimited */
   @Override
   public int getMaxRowSize() {
     return 2147483639;
   }
+
   /** Although there is no limit, it is not recommended */
   @Override
   public int getMaxSchemaNameLength() {
@@ -1513,7 +1587,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       return client.getProperties().getThriftMaxFrameSize();
     } catch (TException e) {
-      logger.error(String.format("get max statement length error:%s ", e.getMessage()));
+      LOGGER.error("get max statement length error: {}", e.getMessage());
     }
     return 0;
   }
@@ -1522,16 +1596,19 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
   public int getMaxStatements() {
     return 0;
   }
+
   /** Although there is no limit, it is not recommended */
   @Override
   public int getMaxTableNameLength() {
     return 1024;
   }
+
   /** Although there is no limit, it is not recommended */
   @Override
   public int getMaxTablesInSelect() {
     return 1024;
   }
+
   /** Although there is no limit, it is not recommended */
   @Override
   public int getMaxUserNameLength() {
@@ -1559,7 +1636,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         result = result.substring(0, result.length() - 1);
       }
     } catch (Exception e) {
-      logger.error(String.format("get numeric functions error:%s ", e.getMessage()));
+      LOGGER.error("get numeric functions error: {}", e.getMessage());
     } finally {
       close(resultSet, statement);
     }
@@ -1609,7 +1686,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format("get primary keys error:%s ", e.getMessage()));
+      LOGGER.error("get primary keys error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1626,7 +1703,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1665,7 +1743,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get procedure columns error:%s ", e.getMessage()));
+      LOGGER.error("get procedure columns error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1682,7 +1760,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1710,7 +1789,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get procedures error:%s ", e.getMessage()));
+      LOGGER.error("get procedures error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1727,7 +1806,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1780,7 +1860,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(Collections.singletonList(value), tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1797,7 +1877,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1825,10 +1906,19 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     return "stroge group";
   }
 
+  @SuppressWarnings(
+      "squid:S2095") // ignore Use try-with-resources or close this "Statement" in a "finally"
+  // clause
   @Override
   public ResultSet getSchemas() throws SQLException {
     Statement stmt = this.connection.createStatement();
-    ResultSet rs = stmt.executeQuery(SHOW_DATABASES_SQL);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(SHOW_DATABASES_SQL);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[2];
     fields[0] = new Field("", TABLE_SCHEM, "TEXT");
     fields[1] = new Field("", "TABLE_CATALOG", "TEXT");
@@ -1856,7 +1946,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -1873,7 +1963,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1910,7 +2001,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get super tables error:%s ", e.getMessage()));
+      LOGGER.error("get super tables error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1927,7 +2018,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1951,7 +2043,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get super types error:%s ", e.getMessage()));
+      LOGGER.error("get super types error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -1968,7 +2060,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -1988,7 +2081,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         result = result.substring(0, result.length() - 1);
       }
     } catch (Exception ex) {
-      logger.error(String.format("get system functions error:%s ", ex.getMessage()));
+      LOGGER.error("get system functions error: {}", ex.getMessage());
     } finally {
       close(resultSet, statement);
     }
@@ -1997,9 +2090,11 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
 
   @SuppressWarnings({
     "squid:S6541",
-    "squid:S3776"
+    "squid:S3776",
+    "squid:S2095"
   }) // ignore Cognitive Complexity of methods should not be too high
-  //  // ignore Methods should not perform too many tasks (aka Brain method)
+  // ignore Methods should not perform too many tasks (aka Brain method)
+  // ignore Use try-with-resources or close this "Statement" in a "finally" clause
   @Override
   public ResultSet getTablePrivileges(String catalog, String schemaPattern, String tableNamePattern)
       throws SQLException {
@@ -2026,8 +2121,13 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
       }
       sql = sql + "." + tableNamePattern;
     }
-
-    ResultSet rs = stmt.executeQuery(sql);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(sql);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[8];
     fields[0] = new Field("", TABLE_CAT, "TEXT");
     fields[1] = new Field("", TABLE_SCHEM, "TEXT");
@@ -2080,7 +2180,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -2097,7 +2197,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -2120,7 +2221,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(Collections.singletonList(value), tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -2137,54 +2238,68 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @SuppressWarnings({
     "squid:S6541",
-    "squid:S3776"
+    "squid:S3776",
+    "squid:S2095"
   }) // ignore Cognitive Complexity of methods should not be too high
   // ignore Methods should not perform too many tasks (aka Brain method)
+  // ignore Use try-with-resources or close this "Statement" in a "finally" clause
   @Override
   public ResultSet getColumns(
       String catalog, String schemaPattern, String tableNamePattern, String columnNamePattern)
       throws SQLException {
     Statement stmt = this.connection.createStatement();
 
+    if (this.connection.getCatalog().equals(catalog)) {
+      catalog = null;
+    }
+
     String sql = "SHOW TIMESERIES";
-    if (catalog != null && catalog.length() > 0) {
+    if (StringUtils.isNotEmpty(catalog)) {
       if (catalog.contains("%")) {
         catalog = catalog.replace("%", "*");
       }
       sql = sql + " " + catalog;
-    } else if (schemaPattern != null && schemaPattern.length() > 0) {
+    } else if (StringUtils.isNotEmpty(schemaPattern)) {
       if (schemaPattern.contains("%")) {
         schemaPattern = schemaPattern.replace("%", "*");
       }
       sql = sql + " " + schemaPattern;
     }
-    if (((catalog != null && catalog.length() > 0)
-            || schemaPattern != null && schemaPattern.length() > 0)
-        && tableNamePattern != null
-        && tableNamePattern.length() > 0) {
+    if ((StringUtils.isNotEmpty(catalog) || StringUtils.isNotEmpty(schemaPattern))
+        && StringUtils.isNotEmpty(tableNamePattern)) {
       if (tableNamePattern.contains("%")) {
         tableNamePattern = tableNamePattern.replace("%", "*");
       }
       sql = sql + "." + tableNamePattern;
     }
 
-    if (((catalog != null && catalog.length() > 0)
-            || schemaPattern != null && schemaPattern.length() > 0)
-        && tableNamePattern != null
-        && tableNamePattern.length() > 0
-        && columnNamePattern != null
-        && columnNamePattern.length() > 0) {
+    if ((StringUtils.isNotEmpty(catalog) || StringUtils.isNotEmpty(schemaPattern))
+        && StringUtils.isNotEmpty(tableNamePattern)
+        && StringUtils.isNotEmpty(columnNamePattern)) {
       if (columnNamePattern.contains("%")) {
         columnNamePattern = columnNamePattern.replace("%", "*");
       }
       sql = sql + "." + columnNamePattern;
     }
-    ResultSet rs = stmt.executeQuery(sql);
+
+    if (StringUtils.isEmpty(catalog)
+        && StringUtils.isEmpty(schemaPattern)
+        && StringUtils.isNotEmpty(tableNamePattern)) {
+      sql = sql + " " + tableNamePattern + ".*";
+    }
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(sql);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[24];
     fields[0] = new Field("", TABLE_CAT, "TEXT");
     fields[1] = new Field("", TABLE_SCHEM, "TEXT");
@@ -2308,7 +2423,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     } finally {
       close(rs, stmt);
     }
@@ -2325,7 +2440,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   private void close(ResultSet rs, Statement stmt) {
@@ -2406,16 +2522,18 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
 
   @SuppressWarnings({
     "squid:S6541",
-    "squid:S3776"
+    "squid:S3776",
+    "squid:S2095"
   }) // ignore Cognitive Complexity of methods should not be too high
   // ignore Methods should not perform too many tasks (aka Brain method)
+  // ignore Use try-with-resources or close this "Statement" in a "finally" clause
   @Override
   public ResultSet getTables(
       String catalog, String schemaPattern, String tableNamePattern, String[] types)
       throws SQLException {
     Statement stmt = this.connection.createStatement();
 
-    String sql = "SHOW devices";
+    String sql = "SHOW DEVICES";
     String database = "";
     if (catalog != null && catalog.length() > 0) {
       if (catalog.contains("%")) {
@@ -2439,7 +2557,13 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
       }
       sql = sql + "." + tableNamePattern;
     }
-    ResultSet rs = stmt.executeQuery(sql);
+    ResultSet rs;
+    try {
+      rs = stmt.executeQuery(sql);
+    } catch (SQLException e) {
+      stmt.close();
+      throw e;
+    }
     Field[] fields = new Field[10];
     fields[0] = new Field("", TABLE_CAT, "TEXT");
     fields[1] = new Field("", TABLE_SCHEM, "TEXT");
@@ -2483,7 +2607,11 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         if (i < 2) {
           valueInRow.add("");
         } else if (i == 2) {
-          valueInRow.add(res.substring(database.length() + 1));
+          int beginIndex = database.length() + 1;
+          if (StringUtils.isEmpty(database)) {
+            beginIndex = 0;
+          }
+          valueInRow.add(res.substring(beginIndex));
         } else if (i == 3) {
           valueInRow.add("TABLE");
         } else {
@@ -2497,7 +2625,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     }
     return new IoTDBJDBCResultSet(
         stmt,
@@ -2512,7 +2640,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -2697,7 +2826,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       tsBlock = convertTsBlock(valuesList, tsDataTypeList);
     } catch (IOException e) {
-      logger.error(String.format(CONVERT_ERROR_MSG, e.getMessage()));
+      LOGGER.error(CONVERT_ERROR_MSG, e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -2714,7 +2843,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         Collections.singletonList(tsBlock),
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -2740,7 +2870,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get UDTS error:%s ", e.getMessage()));
+      LOGGER.error("get UDTS error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -2757,11 +2887,13 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
   public String getURL() {
+    // TODO: Return the URL for this DBMS or null if it cannot be generated
     return this.connection.getUrl();
   }
 
@@ -2793,7 +2925,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         columnNameIndex.put(fields[i].getName(), i);
       }
     } catch (Exception e) {
-      logger.error(String.format("get version columns error:%s ", e.getMessage()));
+      LOGGER.error("get version columns error: {}", e.getMessage());
     } finally {
       close(null, stmt);
     }
@@ -2810,7 +2942,8 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         null,
         null,
         (long) 60 * 1000,
-        false);
+        false,
+        zoneId);
   }
 
   @Override
@@ -2828,7 +2961,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       return client.getProperties().isReadOnly;
     } catch (TException e) {
-      logger.error(String.format("get is readOnly error:%s ", e.getMessage()));
+      LOGGER.error("get is readOnly error: {}", e.getMessage());
     }
     throw new SQLException("Can not get the read-only mode");
   }
@@ -3273,7 +3406,9 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     return false;
   }
 
-  /** @deprecated recommend using getMetadataInJson() instead of toString() */
+  /**
+   * @deprecated recommend using getMetadataInJson() instead of toString()
+   */
   @SuppressWarnings("squid:S1133") // ignore Deprecated code should be removed
   @Deprecated
   @Override
@@ -3281,7 +3416,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
     try {
       return getMetadataInJsonFunc();
     } catch (IoTDBSQLException e) {
-      logger.error("Failed to fetch metadata in json because: ", e);
+      LOGGER.error("Failed to fetch metadata in json because: ", e);
     } catch (TException e) {
       boolean flag = connection.reconnect();
       this.client = connection.getClient();
@@ -3289,7 +3424,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
         try {
           return getMetadataInJsonFunc();
         } catch (TException e2) {
-          logger.error(
+          LOGGER.error(
               "Fail to get all timeseries "
                   + "info after reconnecting."
                   + " please check server status",
@@ -3298,7 +3433,7 @@ public class IoTDBDatabaseMetadata implements DatabaseMetaData {
           // ignored
         }
       } else {
-        logger.error(
+        LOGGER.error(
             "Fail to reconnect to server "
                 + "when getting all timeseries info. please check server status");
       }

@@ -38,8 +38,7 @@ import java.util.Base64;
 import java.util.Map;
 
 public class HttpsExample {
-
-  private static Logger logger = LoggerFactory.getLogger(HttpsExample.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(HttpsExample.class);
 
   private static final String UTF8 = "utf-8";
 
@@ -64,11 +63,10 @@ public class HttpsExample {
       HttpEntity responseEntity = response.getEntity();
       String message = EntityUtils.toString(responseEntity, UTF8);
       String result = JsonParser.parseString(message).getAsJsonObject().toString();
-      logger.info(result);
+      LOGGER.info(result);
 
     } catch (IOException e) {
-      e.printStackTrace();
-
+      LOGGER.error("Https ping rest api failed", e);
     } finally {
       try {
         httpClient.close();
@@ -76,7 +74,7 @@ public class HttpsExample {
           response.close();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOGGER.error("Response close error", e);
       }
     }
   }
@@ -102,17 +100,16 @@ public class HttpsExample {
       HttpEntity responseEntity = response.getEntity();
       String message = EntityUtils.toString(responseEntity, UTF8);
       String result = JsonParser.parseString(message).getAsJsonObject().toString();
-      logger.info(result);
+      LOGGER.info(result);
     } catch (IOException e) {
-      e.printStackTrace();
-
+      LOGGER.error("Https insertTablet rest api failed", e);
     } finally {
       try {
         if (response != null) {
           response.close();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOGGER.error("Response close error", e);
       }
     }
   }
@@ -128,16 +125,16 @@ public class HttpsExample {
       HttpEntity responseEntity = response.getEntity();
       String message = EntityUtils.toString(responseEntity, UTF8);
       ObjectMapper mapper = new ObjectMapper();
-      logger.info("message = {}", mapper.readValue(message, Map.class));
+      LOGGER.info("message = {}", mapper.readValue(message, Map.class));
     } catch (IOException e) {
-      e.printStackTrace();
+      LOGGER.error("Https query rest api failed", e);
     } finally {
       try {
         if (response != null) {
           response.close();
         }
       } catch (IOException e) {
-        e.printStackTrace();
+        LOGGER.error("Response close error", e);
       }
     }
   }

@@ -16,6 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.iotdb.jdbc;
 
 import org.apache.thrift.transport.TTransportException;
@@ -35,6 +36,7 @@ import java.util.regex.Pattern;
 public class IoTDBDriver implements Driver {
   private static final org.slf4j.Logger logger =
       org.slf4j.LoggerFactory.getLogger(IoTDBDriver.class);
+
   /** Is this driver JDBC compliant. */
   private static final boolean TSFILE_JDBC_COMPLIANT = false;
 
@@ -71,11 +73,13 @@ public class IoTDBDriver implements Driver {
 
   @Override
   public int getMajorVersion() {
+    // TODO Auto-generated method stub
     return 0;
   }
 
   @Override
   public int getMinorVersion() {
+    // TODO Auto-generated method stub
     return 0;
   }
 
@@ -86,6 +90,7 @@ public class IoTDBDriver implements Driver {
 
   @Override
   public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+    // TODO Auto-generated method stub
     return new DriverPropertyInfo[0];
   }
 

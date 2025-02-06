@@ -16,13 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.iotdb.jdbc;
 
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.read.common.Field;
-import org.apache.iotdb.tsfile.read.common.RowRecord;
-
 import org.apache.thrift.EncodingUtils;
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.read.common.Field;
+import org.apache.tsfile.read.common.RowRecord;
 
 import java.math.BigInteger;
 import java.security.MessageDigest;
@@ -117,10 +117,12 @@ public class GroupedLSBWatermarkEncoder implements WatermarkEncoder {
       TSDataType dataType = field.getDataType();
       switch (dataType) {
         case INT32:
+        case DATE:
           int originIntValue = field.getIntV();
           field.setIntV(encodeInt(originIntValue, timestamp));
           break;
         case INT64:
+        case TIMESTAMP:
           long originLongValue = field.getLongV();
           field.setLongV(encodeLong(originLongValue, timestamp));
           break;
@@ -132,6 +134,10 @@ public class GroupedLSBWatermarkEncoder implements WatermarkEncoder {
           double originDoubleValue = field.getDoubleV();
           field.setDoubleV(encodeDouble(originDoubleValue, timestamp));
           break;
+        case BLOB:
+        case STRING:
+        case BOOLEAN:
+        case TEXT:
         default:
       }
     }

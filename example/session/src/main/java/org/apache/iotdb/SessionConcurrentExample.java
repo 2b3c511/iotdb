@@ -24,11 +24,15 @@ import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
 import org.apache.iotdb.session.Session;
 import org.apache.iotdb.session.template.MeasurementNode;
-import org.apache.iotdb.tsfile.file.metadata.enums.CompressionType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSEncoding;
-import org.apache.iotdb.tsfile.write.record.Tablet;
-import org.apache.iotdb.tsfile.write.schema.MeasurementSchema;
+
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.file.metadata.enums.CompressionType;
+import org.apache.tsfile.file.metadata.enums.TSEncoding;
+import org.apache.tsfile.write.record.Tablet;
+import org.apache.tsfile.write.schema.IMeasurementSchema;
+import org.apache.tsfile.write.schema.MeasurementSchema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -39,6 +43,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class SessionConcurrentExample {
+  private static final Logger LOGGER = LoggerFactory.getLogger(SessionConcurrentExample.class);
 
   private static final int SG_NUM = 20;
   private static final int DEVICE_NUM = 100;
@@ -52,7 +57,7 @@ public class SessionConcurrentExample {
       session.open(false);
       createTemplate(session);
     } catch (Exception e) {
-      e.printStackTrace();
+      LOGGER.error("create template with Session error", e);
     }
 
     CountDownLatch latch = new CountDownLatch(SG_NUM * PARALLEL_DEGREE_FOR_ONE_SG);
@@ -68,7 +73,7 @@ public class SessionConcurrentExample {
     try {
       latch.await();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      LOGGER.warn("CountDownLatch interrupted", e);
       Thread.currentThread().interrupt();
     }
   }
@@ -79,7 +84,7 @@ public class SessionConcurrentExample {
     try {
       session.open(false);
     } catch (IoTDBConnectionException e) {
-      e.printStackTrace();
+      LOGGER.error("Open Session error", e);
     }
 
     for (int j = 0; j < DEVICE_NUM; j++) {
@@ -88,14 +93,14 @@ public class SessionConcurrentExample {
             session,
             String.format("root.sg_%d.d_%d", currentIndex / PARALLEL_DEGREE_FOR_ONE_SG, j));
       } catch (IoTDBConnectionException | StatementExecutionException e) {
-        e.printStackTrace();
+        LOGGER.error("Insert tablet error", e);
       }
     }
 
     try {
       session.close();
     } catch (IoTDBConnectionException e) {
-      e.printStackTrace();
+      LOGGER.error("Close session error", e);
     }
 
     latch.countDown();
@@ -139,52 +144,29 @@ public class SessionConcurrentExample {
      */
     // The schema of measurements of one device
     // only measurementId and data type in MeasurementSchema take effects in Tablet
-    List<MeasurementSchema> schemaList = new ArrayList<>();
+    List<IMeasurementSchema> schemaList = new ArrayList<>();
     schemaList.add(new MeasurementSchema("s1", TSDataType.INT64));
     schemaList.add(new MeasurementSchema("s2", TSDataType.INT64));
     schemaList.add(new MeasurementSchema("s3", TSDataType.INT64));
 
     Tablet tablet = new Tablet(deviceId, schemaList, 100);
 
-    // Method 1 to add tablet data
     long timestamp = System.currentTimeMillis();
     for (long row = 0; row < 100; row++) {
-      int rowIndex = tablet.rowSize++;
+      int rowIndex = tablet.getRowSize();
       tablet.addTimestamp(rowIndex, timestamp);
       for (int s = 0; s < 3; s++) {
         long value = random.nextLong();
-        tablet.addValue(schemaList.get(s).getMeasurementId(), rowIndex, value);
+        tablet.addValue(schemaList.get(s).getMeasurementName(), rowIndex, value);
       }
-      if (tablet.rowSize == tablet.getMaxRowNumber()) {
+      if (tablet.getRowSize() == tablet.getMaxRowNumber()) {
         session.insertTablet(tablet, true);
         tablet.reset();
       }
       timestamp++;
     }
 
-    if (tablet.rowSize != 0) {
-      session.insertTablet(tablet);
-      tablet.reset();
-    }
-
-    // Method 2 to add tablet data
-    long[] timestamps = tablet.timestamps;
-    Object[] values = tablet.values;
-
-    for (long time = 0; time < 100; time++) {
-      int row = tablet.rowSize++;
-      timestamps[row] = time;
-      for (int i = 0; i < 3; i++) {
-        long[] sensor = (long[]) values[i];
-        sensor[row] = i;
-      }
-      if (tablet.rowSize == tablet.getMaxRowNumber()) {
-        session.insertTablet(tablet, true);
-        tablet.reset();
-      }
-    }
-
-    if (tablet.rowSize != 0) {
+    if (tablet.getRowSize() != 0) {
       session.insertTablet(tablet);
       tablet.reset();
     }

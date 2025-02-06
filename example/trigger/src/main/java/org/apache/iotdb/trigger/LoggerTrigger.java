@@ -20,11 +20,11 @@
 package org.apache.iotdb.trigger;
 
 import org.apache.iotdb.trigger.api.Trigger;
-import org.apache.iotdb.tsfile.file.metadata.enums.TSDataType;
-import org.apache.iotdb.tsfile.utils.Binary;
-import org.apache.iotdb.tsfile.write.record.Tablet;
-import org.apache.iotdb.tsfile.write.schema.MeasurementSchema;
 
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.utils.Binary;
+import org.apache.tsfile.write.record.Tablet;
+import org.apache.tsfile.write.schema.IMeasurementSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,20 +36,20 @@ public class LoggerTrigger implements Trigger {
 
   @Override
   public boolean fire(Tablet tablet) throws Exception {
-    List<MeasurementSchema> measurementSchemaList = tablet.getSchemas();
+    List<IMeasurementSchema> measurementSchemaList = tablet.getSchemas();
     for (int i = 0, n = measurementSchemaList.size(); i < n; i++) {
       if (measurementSchemaList.get(i).getType().equals(TSDataType.DOUBLE)) {
-        logDouble((double[]) tablet.values[i]);
+        logDouble((double[]) tablet.getValues()[i]);
       } else if (measurementSchemaList.get(i).getType().equals(TSDataType.FLOAT)) {
-        logFloat((float[]) tablet.values[i]);
+        logFloat((float[]) tablet.getValues()[i]);
       } else if (measurementSchemaList.get(i).getType().equals(TSDataType.INT64)) {
-        logLong((long[]) tablet.values[i]);
+        logLong((long[]) tablet.getValues()[i]);
       } else if (measurementSchemaList.get(i).getType().equals(TSDataType.INT32)) {
-        logInt((int[]) tablet.values[i]);
+        logInt((int[]) tablet.getValues()[i]);
       } else if (measurementSchemaList.get(i).getType().equals(TSDataType.TEXT)) {
-        logText((Binary[]) tablet.values[i]);
+        logText((Binary[]) tablet.getValues()[i]);
       } else if (measurementSchemaList.get(i).getType().equals(TSDataType.BOOLEAN)) {
-        logBoolean((boolean[]) tablet.values[i]);
+        logBoolean((boolean[]) tablet.getValues()[i]);
       }
     }
     return true;

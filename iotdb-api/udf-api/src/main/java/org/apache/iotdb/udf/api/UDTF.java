@@ -29,6 +29,11 @@ import org.apache.iotdb.udf.api.customizer.strategy.MappableRowByRowAccessStrate
 import org.apache.iotdb.udf.api.customizer.strategy.RowByRowAccessStrategy;
 import org.apache.iotdb.udf.api.customizer.strategy.SlidingSizeWindowAccessStrategy;
 import org.apache.iotdb.udf.api.customizer.strategy.SlidingTimeWindowAccessStrategy;
+import org.apache.iotdb.udf.api.utils.RowImpl;
+
+import org.apache.tsfile.block.column.Column;
+import org.apache.tsfile.block.column.ColumnBuilder;
+import org.apache.tsfile.enums.TSDataType;
 
 /**
  * User-defined Time-series Generating Function (UDTF)
@@ -80,6 +85,11 @@ public interface UDTF extends UDF {
   @SuppressWarnings("squid:S112")
   void beforeStart(UDFParameters parameters, UDTFConfigurations configurations) throws Exception;
 
+  default void transform(Column[] columns, ColumnBuilder timesBuilder, ColumnBuilder valuesBuilder)
+      throws Exception {
+    throw new UnsupportedOperationException();
+  }
+
   /**
    * When the user specifies {@link RowByRowAccessStrategy} to access the original data in {@link
    * UDTFConfigurations}, this method will be called to process the transformation. In a single UDF
@@ -110,6 +120,48 @@ public interface UDTF extends UDF {
   @SuppressWarnings("squid:S112")
   default void transform(RowWindow rowWindow, PointCollector collector) throws Exception {
     // do nothing
+  }
+
+  /**
+   * When the user specifies {@link MappableRowByRowAccessStrategy} to access the original data in
+   * {@link UDTFConfigurations}, this method will be called to process the transformation. Compared
+   * to {@link #transform(Row)}, this method processes input data in batches. In a single UDF query,
+   * this method may be called multiple times.
+   *
+   * @param columns original input data columns (aligned by time)
+   * @param builder used to collect output data points
+   * @throws Exception the user can throw errors if necessary
+   * @throws UnsupportedOperationException if the user does not override this method
+   * @see MappableRowByRowAccessStrategy
+   */
+  default void transform(Column[] columns, ColumnBuilder builder) throws Exception {
+    int colCount = columns.length;
+    int rowCount = columns[0].getPositionCount();
+
+    // collect input data types from columns
+    TSDataType[] dataTypes = new TSDataType[colCount];
+    for (int i = 0; i < colCount; i++) {
+      dataTypes[i] = columns[i].getDataType();
+    }
+
+    // iterate each row
+    for (int i = 0; i < rowCount; i++) {
+      // collect values from columns
+      Object[] values = new Object[colCount];
+      for (int j = 0; j < colCount; j++) {
+        values[j] = columns[j].isNull(i) ? null : columns[j].getObject(i);
+      }
+      // construct input row for executor
+      RowImpl row = new RowImpl(dataTypes);
+      row.setRowRecord(values);
+      // transform each row by default
+      Object res = transform(row);
+      if (res != null) {
+        builder.writeObject(res);
+      } else {
+        builder.appendNull();
+      }
+    }
   }
 
   /**
